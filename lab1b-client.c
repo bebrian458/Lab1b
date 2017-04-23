@@ -29,9 +29,14 @@ int pID;
 // Shell flag, by default, it is 0
 int isShell = 0;
 
+// Socket
+int sockfd;
+
 
 // Before exiting, restore the terminal to original mode
 void restoreTerminal(){
+
+	close(sockfd);
 	if(tcsetattr(STDIN_FILENO, TCSANOW, &savedTerminal) < 0){
 		fprintf(stderr, "Error in restoring to original terminal mode");
 		exit(1);
@@ -60,32 +65,6 @@ void signal_handler(int signum){
 		exit(1);
 	}
 }
-
-
-// Normal read and write
-void readWrite(){
-
-	char buffer[1];
-	ssize_t reading = read(0, buffer, 1);
-  	while(reading > 0){
-
-  		// Check for ^D to exit
-  		if(*buffer == 0x04){
-	  		//restoreTerminal();
-  			exit(0);
-  		}
-
-  		// Check for \r and \n to create a new line
-  		if(*buffer == '\r' || *buffer == '\n'){
-  			char temp[2] = {'\r', '\n'};
-  			write(1, temp, 2);
-  		}
-
-    	write(1, buffer, 1);
-    	reading = read(0, buffer, 1);
- 	}
-}
-
 
 void readWrite2(int sockfd){
 	struct pollfd fds[2];
@@ -122,7 +101,7 @@ void readWrite2(int sockfd){
 
 				// Check for ^C to kill
 				if(*(buffer+index) == 0x03){
-					kill(pID, SIGINT);
+//					kill(pID, SIGINT);
 					exit(1);
 				}
 
@@ -245,29 +224,7 @@ int main(int argc, char *argv[]){
 		}
 	}
 
-	// Save and configure terminal modes
-	if(tcgetattr(STDIN_FILENO, &savedTerminal) < 0){
-		fprintf(stderr, "Error in tcgetattr");
-		exit(1);
-	}
-
-	if(tcgetattr(STDIN_FILENO, &configTerminal) < 0){
-		fprintf(stderr, "Error in tcgetattr");
-		exit(1);
-	}
-	configTerminal.c_iflag = ISTRIP;
-	configTerminal.c_oflag = 0;
-	configTerminal.c_lflag = 0;
-	if(tcsetattr(STDIN_FILENO, TCSANOW, &configTerminal) < 0){
-		fprintf(stderr, "Error in tcsetattr");
-		//restoreTerminal();
-		exit(1);
-	}
-
-	atexit(restoreTerminal);
-
 	// Create Socket Connection
-	int sockfd;
 	struct sockaddr_in serv_addr;
 	struct hostent* server;
 
@@ -297,6 +254,28 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "Error connecting to server\n");
 		exit(1);
 	}
+
+
+	// Save and configure terminal modes
+	if(tcgetattr(STDIN_FILENO, &savedTerminal) < 0){
+		fprintf(stderr, "Error in tcgetattr");
+		exit(1);
+	}
+
+	if(tcgetattr(STDIN_FILENO, &configTerminal) < 0){
+		fprintf(stderr, "Error in tcgetattr");
+		exit(1);
+	}
+	configTerminal.c_iflag = ISTRIP;
+	configTerminal.c_oflag = 0;
+	configTerminal.c_lflag = 0;
+	if(tcsetattr(STDIN_FILENO, TCSANOW, &configTerminal) < 0){
+		fprintf(stderr, "Error in tcsetattr");
+		//restoreTerminal();
+		exit(1);
+	}
+
+	atexit(restoreTerminal);
 	
 	// Read and write between server and client
 	readWrite2(sockfd);

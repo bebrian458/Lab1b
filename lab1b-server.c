@@ -153,7 +153,7 @@ void readWrite2(){
 		  		// Check for \r and \n to create a new line
 		  		if(*(buffer+index) == '\r' || *(buffer+index) == '\n'){
 		  			char temp[2] = {'\r', '\n'};
-		  			write(1, temp, 2);
+//		  			write(1, temp, 2);
 
 		  			// Pass in only a \n to shell
 		  			temp[0] = '\n';
@@ -162,7 +162,7 @@ void readWrite2(){
 			  	}
 		  		// Otherwise, pass characters normally to STDOUT and shell
 		  		else{
-		  			write(1, buffer+index, 1);
+//		  			write(1, buffer+index, 1);
 		    		write(pipe1[1], buffer+index, 1);
 		  		}
 		  		index++;
