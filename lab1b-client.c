@@ -7,6 +7,10 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 // Terminal modes
 struct termios savedTerminal;
@@ -83,7 +87,7 @@ void readWrite(){
 }
 
 
-void readWrite2(){
+void readWrite2(int sockfd){
 	struct pollfd fds[2];
 	
 //	printf("hello\n");
@@ -94,7 +98,7 @@ void readWrite2(){
 	fds[0].events = POLLIN | POLLHUP | POLLERR;
 
 	// Read end of pipe 2
-	fds[1].fd = pipe2[0];
+	fds[1].fd = sockfd;
 	fds[1].events = 0;
 	fds[1].events = POLLIN | POLLHUP | POLLERR;
 
@@ -106,7 +110,7 @@ void readWrite2(){
 			fprintf(stderr, "Error in poll. %s\n", strerror(errno));
 			exit(1);
 		}
-		// STDIN to shell
+		// STDIN to server
 		if(fds[0].revents & POLLIN){
 
 			// Read from STDIN
@@ -122,11 +126,12 @@ void readWrite2(){
 					exit(1);
 				}
 
+/*
 		  		// Check for ^D to exit
 		  		if(*(buffer+index) == 0x04){
 
 		  			// Close pipe to shell
-		  			close(pipe1[1]);
+//		  			close(pipe1[1]);
 
 		  			// Process remaining from shell
 			    	char buffer2[SIZE_BUFFER];
@@ -154,6 +159,7 @@ void readWrite2(){
 			    	//restoreTerminal();
 		  			exit(0);
 		  		}
+*/
 
 		  		// Check for \r and \n to create a new line
 		  		if(*(buffer+index) == '\r' || *(buffer+index) == '\n'){
@@ -162,13 +168,13 @@ void readWrite2(){
 
 		  			// Pass in only a \n to shell
 		  			temp[0] = '\n';
-		  			write(pipe1[1], temp, 1);
+		  			write(sockfd, temp, 1);
 
 			  	}
 		  		// Otherwise, pass characters normally to STDOUT and shell
 		  		else{
 		  			write(1, buffer+index, 1);
-		    		write(pipe1[1], buffer+index, 1);
+		    		write(sockfd, buffer+index, 1);
 		  		}
 		  		index++;
 		  	}
@@ -181,7 +187,7 @@ void readWrite2(){
 	    	char buffer2[SIZE_BUFFER];
 	    	char temp2[2];
 	    	int bufptr = 0;
-	    	ssize_t sh_reading = read(pipe2[0], buffer2, SIZE_BUFFER);
+	    	ssize_t sh_reading = read(sockfd, buffer2, SIZE_BUFFER);
 	    	while(sh_reading > 0 && bufptr < sh_reading){
 	    		
 	    		// Shutdown when receiving ^D from shell
@@ -213,98 +219,27 @@ void readWrite2(){
 	}
 }
 
-
-/*
-// Read and write function
-void readWrite2(){
-
-	char buffer[1];
-	char temp[2];
-	ssize_t reading = read(0, buffer, 1);
-  	while(reading > 0){
-
-  		// Check for ^D to exit
-  		if(*buffer == 0x04){
-  			restoreTerminal();
-  			exit(0);
-  		}
-
-  		// Check for \r and \n to create a new line
-  		if(*buffer == '\r' || *buffer == '\n'){
-  			
-  			// <cr> or <lf> should echo as <cr><lf> in terminal
-  			temp[0] = '\r';
-  			temp[1] = '\n'	;
-  			write(1, temp, 2);
-
-  			// but go to shell as <lf>
-  			temp[0] = '\n';
-  			write(pipe1[1], temp, 1);
-
-  			// Parent reads from pipe 2, writes to stdout
-	    	char buffer2[SIZE_BUFFER];
-	    	char temp2[2];
-	    	int bufptr = 0;
-	    	ssize_t sh_reading = read(pipe2[0], buffer2, SIZE_BUFFER);
-	    	while(sh_reading > 0 && bufptr < sh_reading){
-	    		if(*(buffer2 + bufptr) == '\n'){
-	    			// printf("hello");
-	    			temp2[0] = '\r';
-	    			temp2[1] = '\n';
-	    			write(1, temp2, 2);
-	    		}
-	    		else{
-	    			//printf("goodbye");
-	    			write(1, buffer2 + bufptr, 1);	
-	    		}
-	    		bufptr++;
-	    	}
-
-  		}
-  		else{
-	  		// Write into terminal
-	    	write(1, buffer, 1);
-
-	  		// Write into pipe to child stdin
-	  		write(pipe1[1], buffer, 1);
-	  	}
-
-    	// // Parent reads from pipe 2, writes to stdout
-    	// char buffer2[1];
-    	// char temp2[2];
-    	// ssize_t sh_reading = read(pipe2[0], buffer2, 1);
-    	// while(reading > 0){
-    	// 	write(1, buffer2, 1);    		
-    	// 	sh_reading = read(pipe2[0], buffer2, 1);
-    	// }
-
-    	// reading = read(0, buffer, 1);
-
-
- 		reading = read(0, buffer, 1);
-
- 	}
-}
-*/
-
 int main(int argc, char *argv[]){
 	
 	int opt = 0;
+	int portnum;
 
 	struct option longopts[] = {
-		{"shell", no_argument, NULL, 's'},
+		{"port", 	required_argument, 	NULL, 'p'},
+		{"log", 	required_argument, 	NULL, 'l'},
+		{"encrypt", no_argument, 		NULL, 'e'},
 		{0,0,0,0}
 	};
 
-	while((opt = getopt_long(argc, argv, "s", longopts, NULL)) != -1){
+	while((opt = getopt_long(argc, argv, "p:l:e", longopts, NULL)) != -1){
 		switch(opt){
-			case 's':
-				isShell = 1;
+			case 'p':
+				portnum = atoi(optarg);
 				signal(SIGINT, signal_handler);
 				signal(SIGPIPE, signal_handler);
 				break;
 			default:
-				fprintf(stderr, "Usage: ./lab1a --shell\n");
+				fprintf(stderr, "Usage: ./lab1a --port=[portnum] --log --encrypt\n");
 				exit(1);
 				break;
 		}
@@ -331,62 +266,40 @@ int main(int argc, char *argv[]){
 
 	atexit(restoreTerminal);
 
-	// Create pipes
-	if(pipe(pipe1) == -1){
-		fprintf(stderr, "Error in creating pipe 1.");
-	}
-	if(pipe(pipe2) == -1){
-		fprintf(stderr, "Error in creating pipe 2.");
-	}
+	// Create Socket Connection
+	int sockfd;
+	struct sockaddr_in serv_addr;
+	struct hostent* server;
 
-	// Start a shell process if flagged
-	if(isShell){
-
-		pID = fork();
-		if(pID < 0){
-			fprintf(stderr, "Error when trying to fork");
-			exit(1);
-		}
-		// Child process will execute the shell
-		if(pID == 0){
-
-			// Make stdin read from pipe 1
-			close(pipe1[1]);
-			dup2(pipe1[0], 0);
-			close(pipe1[0]);
-
-			// Write stdout and stderr to pipe 2
-			close(pipe2[0]);
-			dup2(pipe2[1], 1);
-			dup2(pipe2[1], 2);
-			close(pipe2[1]);
-
-			// Execute the shell
-			if(execvp("/bin/bash", NULL) == -1){
-				fprintf(stderr, "Error in executing the shell");
-				exit(1);
-			}
-
-		}
-		// Parent process bridges the shell and terminal
-		else{
-
-			// Close the unused pipe ends
-			close(pipe1[0]);
-			close(pipe2[1]);
-
-		}
-
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if(sockfd < 0){
+		fprintf(stderr, "Error opening socket\n");
+		exit(1);
 	}
 
+	// Get server name
+	server = gethostbyname("localhost");
+	if(server == NULL){
+		fprintf(stderr, "Error, could not find host\n");
+		exit(1);
+	}
 
+	// Populate the server struct
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(portnum);
+	bcopy((char *) server->h_addr, 
+		(char *) &serv_addr.sin_addr.s_addr,
+		server->h_length);
+
+	// Connect to the server
+	if(connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+		fprintf(stderr, "Error connecting to server\n");
+		exit(1);
+	}
 	
-	if(isShell){
-		readWrite2();	// Read and write for shell communication
-	}
-	else
-		readWrite();	// Read and write normally
-
+	// Read and write between server and client
+	readWrite2(sockfd);
 	
 	// Program finished successfully
  	//restoreTerminal();
