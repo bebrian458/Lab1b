@@ -1,0 +1,17 @@
+NAME: Brian Be
+EMAIL: bebrian458@gmail.com
+ID: 204612203
+
+// Slip days
+I am using one of my 5 slip days.
+
+// Brief overview
+This program uses pipes, polling, and signals to implement basic I/O features. This program comes with a --shell flag, which simulates a shell in a child process by using the fork() and exec() system calls. This allows for communication between the shell and the user input from the keyboard.
+
+// Research
+pipes and file descriptors:
+	https://www.youtube.com/watch?v=EL4hCQc7KXY#t=28.150366
+poll():
+	https://www.youtube.com/watch?v=UP6B324Qh5k
+
+Other sources were from man pages and TA powerpoints/discussion.
