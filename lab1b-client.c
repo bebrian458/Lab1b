@@ -186,13 +186,13 @@ void readWrite2(int sockfd){
 	    		}
 	    		// Server handled NL to CRLF mapping, just pass everything as is to STDOUT
 	    		else{
-
-	    			// 1. Encrypt if flagged
 	    			
-	    			// 2. Log if flagged
+	    			// 1. Log if flagged
 	    			if(isLog)
 	    				// Log will display both a CR and LF on separate lines
 	    				writeToLog(RECEVING, 1, buffer2+bufptr);
+
+	    			// 2. Decrypt if flagged
 
 	    			// 3. Pass characters normally to STDOUT
 	    			write(1, buffer2+bufptr, 1);	
