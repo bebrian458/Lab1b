@@ -142,6 +142,8 @@ void readWrite2(int sockfd){
 
 		  		// Check for \r and \n to create a new line
 		  		if(*(buffer+index) == '\r' || *(buffer+index) == '\n'){
+		  			
+		  			// Echo \r\n to STDOUT
 		  			char temp[2] = {'\r', '\n'};
 		  			write(1, temp, 2);
 
@@ -159,10 +161,10 @@ void readWrite2(int sockfd){
 		  	}
 		}
 
-		// From shell to STDOUT
+		// From server to STDOUT
 		if(fds[1].revents & POLLIN){
 			
-			// Parent reads from pipe 2, writes to stdout
+			// Read from socket, output to STDOUT
 	    	char buffer2[SIZE_BUFFER];
 	    	char temp2[2];
 	    	int bufptr = 0;
@@ -173,13 +175,7 @@ void readWrite2(int sockfd){
 	    		if(*(buffer2 + bufptr) == 0x04){
 	    			exit(0);
 	    		}
-
-	    		// Pass in a \r\n to STDOUT if \n
-	    		if(*(buffer2 + bufptr) == '\n'){
-	    			temp2[0] = '\r';
-	    			temp2[1] = '\n';
-	    			write(1, temp2, 2);
-	    		}
+	    		// Server handled NL to CRLF mapping, just pass everything as is to STDOUT
 	    		else{
 	    			write(1, buffer2 + bufptr, 1);	
 	    		}

@@ -53,30 +53,6 @@ void signal_handler(int signum){
 	}
 }
 
-// Normal read and write
-void readWrite(){
-
-	char buffer[1];
-	ssize_t reading = read(0, buffer, 1);
-  	while(reading > 0){
-
-  		// Check for ^D to exit
-  		if(*buffer == 0x04){
-	  		//restoreTerminal();
-  			exit(0);
-  		}
-
-  		// Check for \r and \n to create a new line
-  		if(*buffer == '\r' || *buffer == '\n'){
-  			char temp[2] = {'\r', '\n'};
-  			write(1, temp, 2);
-  		}
-
-    	write(1, buffer, 1);
-    	reading = read(0, buffer, 1);
- 	}
-}
-
 // Will only be using this read
 void readWrite2(){
 	struct pollfd fds[2];
@@ -101,10 +77,10 @@ void readWrite2(){
 			fprintf(stderr, "Error in poll. %s\n", strerror(errno));
 			exit(1);
 		}
-		// STDIN to shell
+		// From socket to shell
 		if(fds[0].revents & POLLIN){
 
-			// Read from STDIN
+			// Read from STDIN (socket)
 			char buffer[SIZE_BUFFER];
 			int index = 0;
 			ssize_t reading = read(0, buffer, SIZE_BUFFER);
@@ -150,16 +126,7 @@ void readWrite2(){
 		  			exit(0);
 		  		}
 
-		  		// Check for \r and \n to create a new line
-		  		if(*(buffer+index) == '\r' || *(buffer+index) == '\n'){
-		  			char temp[2] = {'\r', '\n'};
-//		  			write(1, temp, 2);
-
-		  			// Pass in only a \n to shell
-		  			temp[0] = '\n';
-		  			write(pipe1[1], temp, 1);
-
-			  	}
+		  		// Client handled CRLF to NL mapping
 		  		// Otherwise, pass characters normally to STDOUT and shell
 		  		else{
 //		  			write(1, buffer+index, 1);
@@ -184,7 +151,7 @@ void readWrite2(){
 	    			exit(0);
 	    		}
 
-	    		// Pass in a \r\n to STDOUT if \n
+	    		// Pass in a \r\n to STDOUT (socket) if \n
 	    		if(*(buffer2 + bufptr) == '\n'){
 	    			temp2[0] = '\r';
 	    			temp2[1] = '\n';
