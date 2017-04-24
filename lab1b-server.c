@@ -77,7 +77,7 @@ void readWrite2(){
 			fprintf(stderr, "Error in poll. %s\n", strerror(errno));
 			exit(1);
 		}
-		// From socket to shell
+		// From STDIN (client) to shell
 		if(fds[0].revents & POLLIN){
 
 			// Read from STDIN (socket)

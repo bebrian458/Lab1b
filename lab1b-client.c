@@ -11,6 +11,8 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 // Terminal modes
 struct termios savedTerminal;
@@ -19,18 +21,20 @@ struct termios configTerminal;
 // Max buffer size for reads
 int SIZE_BUFFER = 1024;
 
-// Pipes
-int pipe1[2];
-int pipe2[2];
-
 // Child pID
 int pID;
 
-// Shell flag, by default, it is 0
-int isShell = 0;
+// Flags
+int isShell=0, 
+	isLog=0;
+
+// Log file
+char* logfile;
+int logfd;
 
 // Socket
 int sockfd;
+
 
 
 // Before exiting, restore the terminal to original mode
@@ -66,17 +70,33 @@ void signal_handler(int signum){
 	}
 }
 
+void writeToLog(int sending, int numBytes, char* buffer){
+
+	if(sending){
+		char message[14] = "SENT # bytes: ";
+		message[5] = '0' + numBytes;
+		write(logfd, message, 14);
+	}
+	else
+	{
+		char message[18] = "RECEIVED # bytes: ";
+		message[9] = '0' + numBytes;
+		write(logfd, message, 18);
+
+	}
+	write(logfd, buffer, numBytes);
+	write(logfd, "\n", 1);
+}
+
 void readWrite2(int sockfd){
 	struct pollfd fds[2];
 	
-//	printf("hello\n");
-
 	// STDIN
 	fds[0].fd = 0;
 	fds[0].events = 0;
 	fds[0].events = POLLIN | POLLHUP | POLLERR;
 
-	// Read end of pipe 2
+	// Socket to server
 	fds[1].fd = sockfd;
 	fds[1].events = 0;
 	fds[1].events = POLLIN | POLLHUP | POLLERR;
@@ -96,7 +116,13 @@ void readWrite2(int sockfd){
 			char buffer[SIZE_BUFFER];
 			int index = 0;
 			ssize_t reading = read(0, buffer, SIZE_BUFFER);
+			
+			// Encrypt
 
+			// Log if flagged
+			if(isLog)
+				writeToLog(1, reading, buffer);
+			
 			while(reading > 0 && index < reading){
 
 				// Check for ^C to kill
@@ -105,41 +131,6 @@ void readWrite2(int sockfd){
 					exit(1);
 				}
 
-/*
-		  		// Check for ^D to exit
-		  		if(*(buffer+index) == 0x04){
-
-		  			// Close pipe to shell
-//		  			close(pipe1[1]);
-
-		  			// Process remaining from shell
-			    	char buffer2[SIZE_BUFFER];
-			    	char temp2[2];
-			    	int bufptr = 0;
-			    	ssize_t sh_reading = read(pipe2[0], buffer2, SIZE_BUFFER);
-			    	while(sh_reading > 0 && bufptr < sh_reading){
-			    		
-	    				// Pass in a \r\n to STDOUT if \n
-			    		if(*(buffer2 + bufptr) == '\n'){
-			    			temp2[0] = '\r';
-			    			temp2[1] = '\n';
-			    			write(1, temp2, 2);
-			    		}
-			    		else{
-			    			write(1, buffer2 + bufptr, 1);	
-			    		}
-			    		bufptr++;
-			    	}
-
-			    	// Close pipe from shell
-			    	close(pipe2[0]);
-
-			    	//fprintf(stderr, "Exit from using ^D\n");
-			    	//restoreTerminal();
-		  			exit(0);
-		  		}
-*/
-
 		  		// Check for \r and \n to create a new line
 		  		if(*(buffer+index) == '\r' || *(buffer+index) == '\n'){
 		  			
@@ -147,12 +138,12 @@ void readWrite2(int sockfd){
 		  			char temp[2] = {'\r', '\n'};
 		  			write(1, temp, 2);
 
-		  			// Pass in only a \n to shell
+		  			// Pass in only a \n to server
 		  			temp[0] = '\n';
 		  			write(sockfd, temp, 1);
 
 			  	}
-		  		// Otherwise, pass characters normally to STDOUT and shell
+		  		// Otherwise, pass characters normally to STDOUT and server
 		  		else{
 		  			write(1, buffer+index, 1);
 		    		write(sockfd, buffer+index, 1);
@@ -164,11 +155,16 @@ void readWrite2(int sockfd){
 		// From server to STDOUT
 		if(fds[1].revents & POLLIN){
 			
-			// Read from socket, output to STDOUT
+			// Read from server, output to STDOUT
 	    	char buffer2[SIZE_BUFFER];
 	    	char temp2[2];
 	    	int bufptr = 0;
 	    	ssize_t sh_reading = read(sockfd, buffer2, SIZE_BUFFER);
+
+	    	// // Log if flagged
+	    	// if(isLog)
+	    	// 	writeToLog(0, sh_reading, buffer2);
+
 	    	while(sh_reading > 0 && bufptr < sh_reading){
 	    		
 	    		// Shutdown when receiving ^D from shell
@@ -177,7 +173,12 @@ void readWrite2(int sockfd){
 	    		}
 	    		// Server handled NL to CRLF mapping, just pass everything as is to STDOUT
 	    		else{
+
 	    			write(1, buffer2 + bufptr, 1);	
+
+	    			// Log if flagged
+	    			if(isLog)
+	    				writeToLog(0, 1, buffer2+bufptr);
 	    		}
 	    		bufptr++;
 	    	}
@@ -212,6 +213,13 @@ int main(int argc, char *argv[]){
 				portnum = atoi(optarg);
 				signal(SIGINT, signal_handler);
 				signal(SIGPIPE, signal_handler);
+				break;
+			case 'l':
+				isLog = 1;
+				logfile = optarg;
+				logfd = creat(logfile, S_IRWXU);
+				break;
+			case 'e':
 				break;
 			default:
 				fprintf(stderr, "Usage: ./lab1a --port=[portnum] --log --encrypt\n");
