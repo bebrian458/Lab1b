@@ -35,6 +35,9 @@ int logfd;
 // Socket
 int sockfd;
 
+// Macros
+const int RECEVING = 0;
+const int SENDING = 1;
 
 
 // Before exiting, restore the terminal to original mode
@@ -117,12 +120,7 @@ void readWrite2(int sockfd){
 			int index = 0;
 			ssize_t reading = read(0, buffer, SIZE_BUFFER);
 			
-			// Encrypt
-
-			// Log if flagged
-			if(isLog)
-				writeToLog(1, reading, buffer);
-			
+			// Iterate over each index in buffer
 			while(reading > 0 && index < reading){
 
 				// Check for ^C to kill
@@ -138,13 +136,28 @@ void readWrite2(int sockfd){
 		  			char temp[2] = {'\r', '\n'};
 		  			write(1, temp, 2);
 
-		  			// Pass in only a \n to server
 		  			temp[0] = '\n';
+
+		  			// 1. Encrypt if flagged
+
+		  			// 2. Log if flagged
+					if(isLog)
+						writeToLog(SENDING, 1, temp);
+
+		  			// 3. Pass in only a \n to server
 		  			write(sockfd, temp, 1);
 
 			  	}
-		  		// Otherwise, pass characters normally to STDOUT and server
+			  	// Otherwise, pass characters normally to STDOUT and server
 		  		else{
+
+		  			// 1. Encrypt if flagged
+
+					// 2. Log if flagged
+					if(isLog)
+						writeToLog(SENDING, 1, buffer+index);
+
+					// 3. Send to STDOUT and server
 		  			write(1, buffer+index, 1);
 		    		write(sockfd, buffer+index, 1);
 		  		}
@@ -174,11 +187,16 @@ void readWrite2(int sockfd){
 	    		// Server handled NL to CRLF mapping, just pass everything as is to STDOUT
 	    		else{
 
-	    			write(1, buffer2 + bufptr, 1);	
-
-	    			// Log if flagged
+	    			// 1. Encrypt if flagged
+	    			
+	    			// 2. Log if flagged
 	    			if(isLog)
-	    				writeToLog(0, 1, buffer2+bufptr);
+	    				// Log will display both a CR and LF on separate lines
+	    				writeToLog(RECEVING, 1, buffer2+bufptr);
+
+	    			// 3. Pass characters normally to STDOUT
+	    			write(1, buffer2+bufptr, 1);	
+
 	    		}
 	    		bufptr++;
 	    	}
