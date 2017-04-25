@@ -163,25 +163,24 @@ void readWrite2(){
 			int index = 0;
 			ssize_t reading = read(0, buffer, SIZE_BUFFER);
 			
-/* Debugging purpose only
+/* Debugging purposes only
 			fprintf(stderr, "server received %d bytes\n", reading);
 			int k = 0;
 			for(; k< reading; k++)
 				fprintf(stderr, "%c\n", buffer[0]);
-/*
+*/
 			
 			while(reading > 0 && index < reading){
 
 				// First, decrypt from client
 		    	if(isEncrypt){
-		    		fprintf(stderr, "Before decryption: %c. Index is %d\n", buffer[index], index);
-		    		int k=0;
+//		    		fprintf(stderr, "Before decryption: %c. Index is %d\n", buffer[index], index);
 
 					if(mdecrypt_generic(decrypt_fd, &buffer[index], 1) != 0){
 						fprintf(stderr, "Error in decryption from client\n");
 						exit(1);
 					}
-					fprintf(stderr, "After decryption: %c. Index is %d\n", buffer[index], index);
+//					fprintf(stderr, "After decryption: %c. Index is %d\n", buffer[index], index);
 		    	}
 
 				// Check for ^C to kill

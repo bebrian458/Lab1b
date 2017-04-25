@@ -92,13 +92,7 @@ void getkey(){
 		exit(1);
 	}
 	keylen = read(keyfd, key, MAX_KEYSIZE);
-	// if(keylen != MAX_KEYSIZE){
-	// 	fprintf(stderr, "Keylen is not maxsize\n");
-	// 	exit(1);
-	// }
 	close(keyfd);
-	fprintf(stderr, "%s\n", key);
-	fprintf(stderr, "%d\n", keylen);
 }
 
 // Initialize modules for encryption and decryption
@@ -399,7 +393,6 @@ int main(int argc, char *argv[]){
 	readWrite2(sockfd);
 	
 	// Program finished successfully
- 	//restoreTerminal();
  	exit(0);
 
 }
