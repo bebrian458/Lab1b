@@ -44,11 +44,12 @@ int sockfd;
 #define MAX_KEYSIZE 16
 char key[MAX_KEYSIZE];
 int keylen;
+char* keyfile;
+int keyfd;
 
 // Encryption descriptors
 MCRYPT encrypt_fd, decrypt_fd;
 char* IV;
-char* IV2;
 
 // Macros
 const int RECEVING = 0;
@@ -86,8 +87,9 @@ void writeToLog(int sending, int numBytes, char* buffer){
 
 // Get key and key length from my.key file
 void getkey(){
-	int keyfd = open("my.key", 0400);
-	if(keyfd < 0){
+	keyfd = open(keyfile, 0400);
+	//fprintf(stderr, "%d\n", keyfd);
+	if(keyfd < -1){
 		fprintf(stderr, "Error opening my.key\n");
 		exit(1);
 	}
@@ -308,11 +310,11 @@ int main(int argc, char *argv[]){
 	struct option longopts[] = {
 		{"port", 	required_argument, 	NULL, 'p'},
 		{"log", 	required_argument, 	NULL, 'l'},
-		{"encrypt", no_argument, 		NULL, 'e'},
+		{"encrypt", required_argument, 	NULL, 'e'},
 		{0,0,0,0}
 	};
 
-	while((opt = getopt_long(argc, argv, "p:l:e", longopts, NULL)) != -1){
+	while((opt = getopt_long(argc, argv, "p:l:e:", longopts, NULL)) != -1){
 		switch(opt){
 			case 'p':
 				portnum = atoi(optarg);
@@ -326,11 +328,13 @@ int main(int argc, char *argv[]){
 				break;
 			case 'e':
 				isEncrypt = 1;
+				keyfile = optarg;
+				//keyfd = open(optarg, 0400);
 				getkey();
 				mcryptInit();
 				break;
 			default:
-				fprintf(stderr, "Usage: ./lab1a --port=[portnum] --log --encrypt\n");
+				fprintf(stderr, "Usage: ./lab1b --port=[portnum] [--log=<logfile>] [--encrypt=<keyfile>]\n");
 				exit(1);
 				break;
 		}
@@ -366,7 +370,7 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "Error connecting to server\n");
 		exit(1);
 	}
-
+	fprintf(stderr, "You are now connected to the server at port %d!\n", portnum);
 
 	// Save and configure terminal modes
 	if(tcgetattr(STDIN_FILENO, &savedTerminal) < 0){

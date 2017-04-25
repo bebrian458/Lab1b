@@ -16,8 +16,6 @@
 //====== REMEMBER TO DUP2 IN SERVER =========//
 
 
-
-
 // Terminal modes
 struct termios savedTerminal;
 struct termios configTerminal;
@@ -36,13 +34,13 @@ int pID;
 #define MAX_KEYSIZE 16
 char key[MAX_KEYSIZE];
 int keylen;
+char* keyfile;
+int keyfd;
 
 // Encryption descriptors
 MCRYPT encrypt_fd, decrypt_fd;
 int isEncrypt=0;
 char* IV;
-char* IV2;
-
 
 void signal_handler(int signum){
 	
@@ -58,8 +56,9 @@ void signal_handler(int signum){
 
 // Get key and key length from my.key file
 void getkey(){
-	int keyfd = open("my.key", 0400);
-	if(keyfd < 0){
+	keyfd = open(keyfile, 0400);
+	//fprintf(stderr, "%d\n", keyfd);
+	if(keyfd < -1){
 		fprintf(stderr, "Error opening my.key\n");
 		exit(1);
 	}
@@ -186,7 +185,7 @@ void readWrite2(){
 				// Check for ^C to kill
 				if(*(buffer+index) == 0x03){
 					kill(pID, SIGINT);
-					exit(1);
+					exit(0);
 				}
 
 		  		// Check for ^D to exit
@@ -312,22 +311,23 @@ int main(int argc, char *argv[]){
 
 	struct option longopts[] = {
 		{"port", 	required_argument, 	NULL, 'p'},
-		{"encrypt", no_argument, 		NULL, 'e'},
+		{"encrypt", required_argument, 	NULL, 'e'},
 		{0,0,0,0}
 	};
 
-	while((opt = getopt_long(argc, argv, "p:e", longopts, NULL)) != -1){
+	while((opt = getopt_long(argc, argv, "p:e:", longopts, NULL)) != -1){
 		switch(opt){
 			case 'p':
 				portnum = atoi(optarg);
 				break;
 			case 'e':
 				isEncrypt = 1;
+				keyfile = optarg;
 				getkey();
 				mcryptInit();
 				break;
 			default:
-				fprintf(stderr, "Usage: ./lab1a --port=[portnum] --encrypt\n");
+				fprintf(stderr, "Usage: ./lab1b --port=<portnum> [--encrypt=<keyfile>]\n");
 				exit(1);
 				break;
 		}
@@ -357,12 +357,14 @@ int main(int argc, char *argv[]){
 
 	// Set up for connecting to client socket
 	listen(sockfd, 5);
+	fprintf(stderr, "Looking for client...\n");
 	clientlen = sizeof(client_addr);
 	newsockfd = accept(sockfd, (struct sockaddr *) &client_addr, &clientlen);
 	if(newsockfd < 0){
 		fprintf(stderr, "Error accepting socket\n");
 		exit(1);
 	}
+	fprintf(stderr, "Client has been found and connected!\n");
 
 	// Create pipes
 	if(pipe(pipe1) == -1){
