@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g
+CFLAGS = -g -lmcrypt
 DIST = README lab1b-client.c lab1b-server.c Makefile
 
 default: lab1b-client lab1b-server

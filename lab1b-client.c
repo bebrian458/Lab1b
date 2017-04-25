@@ -13,19 +13,24 @@
 #include <netdb.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <mcrypt.h>
+
+
+//====== REMEMBER TO DUP2 IN SERVER =========//
+
 
 // Terminal modes
 struct termios savedTerminal;
 struct termios configTerminal;
 
 // Max buffer size for reads
-int SIZE_BUFFER = 1024;
+const int SIZE_BUFFER = 1024;
 
 // Child pID
 int pID;
 
 // Flags
-int isShell=0, 
+int isEncrypt=0, 
 	isLog=0;
 
 // Log file
@@ -35,31 +40,19 @@ int logfd;
 // Socket
 int sockfd;
 
+// Key stats
+#define MAX_KEYSIZE 16
+char key[MAX_KEYSIZE];
+int keylen;
+
+// Encryption descriptors
+MCRYPT encrypt_fd, decrypt_fd;
+char* IV;
+char* IV2;
+
 // Macros
 const int RECEVING = 0;
 const int SENDING = 1;
-
-
-// Before exiting, restore the terminal to original mode
-void restoreTerminal(){
-
-	close(sockfd);
-	if(tcsetattr(STDIN_FILENO, TCSANOW, &savedTerminal) < 0){
-		fprintf(stderr, "Error in restoring to original terminal mode");
-		exit(1);
-	}
-
-	// Status of child process
-	int status;
-
-	if(isShell){
-		waitpid(pID, &status, 0);
-		int sig = status & 0xFF;
-		int finalStat = status/256;
-		fprintf(stderr,"\rSHELL EXIT SIGNAL=%d STATUS=%d\n", sig, finalStat);
-		exit(0);
-	}
-}
 
 void signal_handler(int signum){
 	
@@ -91,6 +84,82 @@ void writeToLog(int sending, int numBytes, char* buffer){
 	write(logfd, "\n", 1);
 }
 
+// Get key and key length from my.key file
+void getkey(){
+	int keyfd = open("my.key", 0400);
+	if(keyfd < 0){
+		fprintf(stderr, "Error opening my.key\n");
+		exit(1);
+	}
+	keylen = read(keyfd, key, MAX_KEYSIZE);
+	// if(keylen != MAX_KEYSIZE){
+	// 	fprintf(stderr, "Keylen is not maxsize\n");
+	// 	exit(1);
+	// }
+	close(keyfd);
+	fprintf(stderr, "%s\n", key);
+	fprintf(stderr, "%d\n", keylen);
+}
+
+// Initialize modules for encryption and decryption
+void mcryptInit(){
+
+	// Initalize for encryption
+	encrypt_fd = mcrypt_module_open("twofish", NULL, "cfb", NULL);
+	if(encrypt_fd == MCRYPT_FAILED){
+		fprintf(stderr, "Error opening encrypt module\n");
+		exit(1);
+	}
+	// Get IV
+	IV = malloc(mcrypt_enc_get_iv_size(encrypt_fd));
+  	int i;
+  	for(i = 0; i < mcrypt_enc_get_iv_size(encrypt_fd); i++)
+    	IV[i] = 'A';
+
+
+	if(mcrypt_generic_init(encrypt_fd, key, keylen, IV) < 0){
+		fprintf(stderr, "Error initializing encrypt module\n");
+		exit(1);
+	}
+
+	// Initialize for decryption
+	decrypt_fd = mcrypt_module_open("twofish", NULL, "cfb", NULL);
+	if(decrypt_fd == MCRYPT_FAILED){
+		fprintf(stderr, "Error opening decrypt module\n");
+		exit(1);
+	}
+
+	if(mcrypt_generic_init(decrypt_fd, key, keylen, IV) < 0){
+		fprintf(stderr, "Error initializing decrypt mdule\n");
+		exit(1);
+	}
+}
+
+void mcryptDeinit(){
+
+	// Deinitialize for encrypt descriptor
+	mcrypt_generic_deinit(encrypt_fd);
+	mcrypt_module_close(encrypt_fd);
+
+	// Deinitialize for decrypt descriptor
+	mcrypt_generic_deinit(encrypt_fd);
+	mcrypt_module_close(decrypt_fd);
+}
+
+// Before exiting, restore the terminal to original mode
+void restoreTerminal(){
+
+	// Close all file descriptors
+	close(sockfd);
+	if(isEncrypt)
+		mcryptDeinit();
+
+	if(tcsetattr(STDIN_FILENO, TCSANOW, &savedTerminal) < 0){
+		fprintf(stderr, "Error in restoring to original terminal mode");
+		exit(1);
+	}
+}
+
 void readWrite2(int sockfd){
 	struct pollfd fds[2];
 	
@@ -120,8 +189,12 @@ void readWrite2(int sockfd){
 			int index = 0;
 			ssize_t reading = read(0, buffer, SIZE_BUFFER);
 			
+//			fprintf(stderr, "Number of bytes read: %d\r\n", reading);
+
 			// Iterate over each index in buffer
 			while(reading > 0 && index < reading){
+
+				//fprintf(stderr, "%c\n", &buffer[index]);
 
 				// Check for ^C to kill
 				if(*(buffer+index) == 0x03){
@@ -139,6 +212,12 @@ void readWrite2(int sockfd){
 		  			temp[0] = '\n';
 
 		  			// 1. Encrypt if flagged
+		  			if(isEncrypt){
+						if(mcrypt_generic(encrypt_fd, temp, 1) != 0){
+							fprintf(stderr, "Error in encryption to server\n");
+							exit(1);
+						}
+		  			}
 
 		  			// 2. Log if flagged
 					if(isLog)
@@ -151,15 +230,26 @@ void readWrite2(int sockfd){
 			  	// Otherwise, pass characters normally to STDOUT and server
 		  		else{
 
+		  			// Send to STDOUT
+		  			write(1, buffer+index, 1);
+//					fprintf(stderr, "\r\nBefore encryption: %c\r\n", *(buffer+index));
+
+
 		  			// 1. Encrypt if flagged
+		  			if(isEncrypt){
+		  				if(mcrypt_generic(encrypt_fd, buffer+index, 1) != 0){
+		  					fprintf(stderr, "Error in encryption to server\n");
+							exit(1);
+		  				}
+		  			}
 
 					// 2. Log if flagged
 					if(isLog)
 						writeToLog(SENDING, 1, buffer+index);
 
-					// 3. Send to STDOUT and server
-		  			write(1, buffer+index, 1);
+					// 3. Send to server
 		    		write(sockfd, buffer+index, 1);
+//		    		fprintf(stderr, "After encryption: %c\r\n\n", *(buffer+index) );
 		  		}
 		  		index++;
 		  	}
@@ -174,12 +264,21 @@ void readWrite2(int sockfd){
 	    	int bufptr = 0;
 	    	ssize_t sh_reading = read(sockfd, buffer2, SIZE_BUFFER);
 
-	    	// // Log if flagged
-	    	// if(isLog)
-	    	// 	writeToLog(0, sh_reading, buffer2);
-
 	    	while(sh_reading > 0 && bufptr < sh_reading){
-	    		
+    		
+    			// 1. Log if flagged
+    			if(isLog)
+    				// Log will display both a CR and LF on separate lines
+    				writeToLog(RECEVING, 1, buffer2+bufptr);
+
+    			// 2. Decrypt if flagged
+	  			if(isEncrypt){
+	  				if(mdecrypt_generic(decrypt_fd, buffer2+bufptr, 1) != 0){
+	  					fprintf(stderr, "Error in decryption from server\n");
+						exit(1);
+	  				}
+	  			}
+
 	    		// Shutdown when receiving ^D from shell
 	    		if(*(buffer2 + bufptr) == 0x04){
 	    			exit(0);
@@ -187,16 +286,8 @@ void readWrite2(int sockfd){
 	    		// Server handled NL to CRLF mapping, just pass everything as is to STDOUT
 	    		else{
 	    			
-	    			// 1. Log if flagged
-	    			if(isLog)
-	    				// Log will display both a CR and LF on separate lines
-	    				writeToLog(RECEVING, 1, buffer2+bufptr);
-
-	    			// 2. Decrypt if flagged
-
 	    			// 3. Pass characters normally to STDOUT
 	    			write(1, buffer2+bufptr, 1);	
-
 	    		}
 	    		bufptr++;
 	    	}
@@ -204,10 +295,12 @@ void readWrite2(int sockfd){
 
 		// Stop read and write if error
 		if(fds[0].revents & (POLLHUP+POLLERR)){
+			fprintf(stderr, "POLL Error\n");
 			exit(1);
 		}
 
 		if(fds[1].revents & (POLLHUP+POLLERR)){
+			fprintf(stderr, "POLL Error\n");
 			exit(1);	
 		}
 	}
@@ -238,6 +331,9 @@ int main(int argc, char *argv[]){
 				logfd = creat(logfile, S_IRWXU);
 				break;
 			case 'e':
+				isEncrypt = 1;
+				getkey();
+				mcryptInit();
 				break;
 			default:
 				fprintf(stderr, "Usage: ./lab1a --port=[portnum] --log --encrypt\n");

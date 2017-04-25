@@ -10,6 +10,13 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <mcrypt.h>
+
+
+//====== REMEMBER TO DUP2 IN SERVER =========//
+
+
+
 
 // Terminal modes
 struct termios savedTerminal;
@@ -25,21 +32,17 @@ int pipe2[2];
 // Child pID
 int pID;
 
-// Before exiting, restore the terminal to original mode
-void restoreTerminal(){
-	if(tcsetattr(STDIN_FILENO, TCSANOW, &savedTerminal) < 0){
-		fprintf(stderr, "Error in restoring to original terminal mode");
-		exit(1);
-	}
+// Key stats
+#define MAX_KEYSIZE 16
+char key[MAX_KEYSIZE];
+int keylen;
 
-	// Status of child process
-	int status;
-	waitpid(pID, &status, 0);
-	int sig = status & 0xFF;
-	int finalStat = status/256;
-	fprintf(stderr,"\rSHELL EXIT SIGNAL=%d STATUS=%d\n", sig, finalStat);
-	exit(0);
-}
+// Encryption descriptors
+MCRYPT encrypt_fd, decrypt_fd;
+int isEncrypt=0;
+char* IV;
+char* IV2;
+
 
 void signal_handler(int signum){
 	
@@ -53,12 +56,87 @@ void signal_handler(int signum){
 	}
 }
 
+// Get key and key length from my.key file
+void getkey(){
+	int keyfd = open("my.key", 0400);
+	if(keyfd < 0){
+		fprintf(stderr, "Error opening my.key\n");
+		exit(1);
+	}
+	keylen = read(keyfd, key, MAX_KEYSIZE);
+	close(keyfd);
+	//fprintf(stderr, "%s\n", key);
+	//fprintf(stderr, "%d\n", keylen);
+}
+
+// Initialize modules for encryption and decryption
+void mcryptInit(){
+
+	// Initalize for encryption
+	encrypt_fd = mcrypt_module_open("twofish", NULL, "cfb", NULL);
+	if(encrypt_fd == MCRYPT_FAILED){
+		fprintf(stderr, "Error opening encrypt module\n");
+		exit(1);
+	}
+	// Get IV
+	IV = malloc(mcrypt_enc_get_iv_size(encrypt_fd));
+  	int i;
+  	for(i = 0; i < mcrypt_enc_get_iv_size(encrypt_fd); i++)
+    	IV[i] = 'A';
+
+	if(mcrypt_generic_init(encrypt_fd, key, keylen, IV) < 0){
+		fprintf(stderr, "Error initializing encrypt module\n");
+		exit(1);
+	}
+
+	// Initialize for decryption
+	decrypt_fd = mcrypt_module_open("twofish", NULL, "cfb", NULL);
+	if(decrypt_fd == MCRYPT_FAILED){
+		fprintf(stderr, "Error opening decrypt module\n");
+		exit(1);
+	}
+
+	if(mcrypt_generic_init(decrypt_fd, key, keylen, IV) < 0){
+		fprintf(stderr, "Error initializing decrypt mdule\n");
+		exit(1);
+	}
+}
+
+void mcryptDeinit(){
+
+	// Deinitialize for encrypt descriptor
+	mcrypt_generic_deinit(encrypt_fd);
+	mcrypt_module_close(encrypt_fd);
+
+	// Deinitialize for decrypt descriptor
+	mcrypt_generic_deinit(encrypt_fd);
+	mcrypt_module_close(decrypt_fd);
+}
+
+// Before exiting, restore the terminal to original mode
+void restoreTerminal(){
+	if(tcsetattr(STDIN_FILENO, TCSANOW, &savedTerminal) < 0){
+		fprintf(stderr, "Error in restoring to original terminal mode");
+		exit(1);
+	}
+
+	// Close all file descriptors
+	if(isEncrypt)
+		mcryptDeinit();
+
+	// Status of child process
+	int status;
+	waitpid(pID, &status, 0);
+	int sig = status & 0xFF;
+	int finalStat = status/256;
+	fprintf(stderr,"\rSHELL EXIT SIGNAL=%d STATUS=%d\n", sig, finalStat);
+	exit(0);
+}
+
 // Will only be using this read
 void readWrite2(){
 	struct pollfd fds[2];
 	
-//	printf("hello\n");
-
 	// STDIN - socket to client
 	fds[0].fd = 0;
 	fds[0].events = 0;
@@ -84,8 +162,27 @@ void readWrite2(){
 			char buffer[SIZE_BUFFER];
 			int index = 0;
 			ssize_t reading = read(0, buffer, SIZE_BUFFER);
-
+			
+/* Debugging purpose only
+			fprintf(stderr, "server received %d bytes\n", reading);
+			int k = 0;
+			for(; k< reading; k++)
+				fprintf(stderr, "%c\n", buffer[0]);
+/*
+			
 			while(reading > 0 && index < reading){
+
+				// First, decrypt from client
+		    	if(isEncrypt){
+		    		fprintf(stderr, "Before decryption: %c. Index is %d\n", buffer[index], index);
+		    		int k=0;
+
+					if(mdecrypt_generic(decrypt_fd, &buffer[index], 1) != 0){
+						fprintf(stderr, "Error in decryption from client\n");
+						exit(1);
+					}
+					fprintf(stderr, "After decryption: %c. Index is %d\n", buffer[index], index);
+		    	}
 
 				// Check for ^C to kill
 				if(*(buffer+index) == 0x03){
@@ -104,15 +201,32 @@ void readWrite2(){
 			    	char temp2[2];
 			    	int bufptr = 0;
 			    	ssize_t sh_reading = read(pipe2[0], buffer2, SIZE_BUFFER);
+
 			    	while(sh_reading > 0 && bufptr < sh_reading){
 			    		
 	    				// Pass in a \r\n to STDOUT if \n
 			    		if(*(buffer2 + bufptr) == '\n'){
 			    			temp2[0] = '\r';
 			    			temp2[1] = '\n';
+
+					    	// Encrypt before writing to client
+					    	if(isEncrypt){
+								if(mcrypt_generic(encrypt_fd, temp2, 2) != 0){
+									fprintf(stderr, "Error in encryption to client\n");
+									exit(1);
+								}
+					    	}
 			    			write(1, temp2, 2);
 			    		}
 			    		else{
+
+							// Encrypt before writing to client
+					    	if(isEncrypt){
+								if(mcrypt_generic(encrypt_fd, buffer2+bufptr, 1) != 0){
+									fprintf(stderr, "Error in encryption to client\n");
+									exit(1);
+								}
+					    	}
 			    			write(1, buffer2 + bufptr, 1);	
 			    		}
 			    		bufptr++;
@@ -129,7 +243,8 @@ void readWrite2(){
 		  		// Client handled CRLF to NL mapping
 		  		// Otherwise, pass characters normally to STDOUT and shell
 		  		else{
-//		  			write(1, buffer+index, 1);
+
+		  			// Decrypted when first read in
 		    		write(pipe1[1], buffer+index, 1);
 		  		}
 		  		index++;
@@ -155,9 +270,25 @@ void readWrite2(){
 	    		if(*(buffer2 + bufptr) == '\n'){
 	    			temp2[0] = '\r';
 	    			temp2[1] = '\n';
+
+	    			// Encrypt before writing to client
+			    	if(isEncrypt){
+						if(mcrypt_generic(encrypt_fd, temp2, 2) != 0){
+							fprintf(stderr, "Error in encryption to client\n");
+							exit(1);
+						}
+			    	}
 	    			write(1, temp2, 2);
 	    		}
 	    		else{
+
+	    			// Encrypt before writing to client
+			    	if(isEncrypt){
+						if(mcrypt_generic(encrypt_fd, buffer2+bufptr, 1) != 0){
+							fprintf(stderr, "Error in encryption to client\n");
+							exit(1);
+						}
+			    	}
 	    			write(1, buffer2 + bufptr, 1);	
 	    		}
 	    		bufptr++;
@@ -192,7 +323,9 @@ int main(int argc, char *argv[]){
 				portnum = atoi(optarg);
 				break;
 			case 'e':
-				// TODO: set up to encrypt
+				isEncrypt = 1;
+				getkey();
+				mcryptInit();
 				break;
 			default:
 				fprintf(stderr, "Usage: ./lab1a --port=[portnum] --encrypt\n");
@@ -278,7 +411,7 @@ int main(int argc, char *argv[]){
 		// Redirect stdin/stderr/stdout to the socket
 		dup2(newsockfd, 0);
 		dup2(newsockfd, 1);
-		dup2(newsockfd, 2);
+		//dup2(newsockfd, 2);
 		close(newsockfd);
 	}
 	
