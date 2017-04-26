@@ -42,6 +42,9 @@ MCRYPT encrypt_fd, decrypt_fd;
 int isEncrypt=0;
 char* IV;
 
+// Socket descriptors
+int sockfd, newsockfd;
+
 void signal_handler(int signum){
 	
 	// SIGINT signals to kill child process/shell
@@ -50,7 +53,12 @@ void signal_handler(int signum){
 	}
 
 	if(signum == SIGPIPE){
-		exit(1);
+		kill(pID, SIGTERM);
+		//close(sockfd);
+		//exit(1);
+
+	if(signum == SIGTERM)
+		fprintf(stderr, "Caught sigterm\n");
 	}
 }
 
@@ -114,14 +122,6 @@ void mcryptDeinit(){
 
 // Before exiting, restore the terminal to original mode
 void restoreTerminal(){
-	if(tcsetattr(STDIN_FILENO, TCSANOW, &savedTerminal) < 0){
-		fprintf(stderr, "Error in restoring to original terminal mode");
-		exit(1);
-	}
-
-	// Close all file descriptors
-	if(isEncrypt)
-		mcryptDeinit();
 
 	// Status of child process
 	int status;
@@ -129,7 +129,12 @@ void restoreTerminal(){
 	int sig = status & 0xFF;
 	int finalStat = status/256;
 	fprintf(stderr,"\rSHELL EXIT SIGNAL=%d STATUS=%d\n", sig, finalStat);
-	exit(0);
+
+	// Close all file descriptors
+	close(sockfd);
+	if(isEncrypt)
+		mcryptDeinit();
+
 }
 
 // Will only be using this read
@@ -185,7 +190,8 @@ void readWrite2(){
 				// Check for ^C to kill
 				if(*(buffer+index) == 0x03){
 					kill(pID, SIGINT);
-					exit(0);
+					fprintf(stderr, "Sending kill SIGINT\n");
+//					exit(0);
 				}
 
 		  		// Check for ^D to exit
@@ -259,8 +265,11 @@ void readWrite2(){
 	    	ssize_t sh_reading = read(pipe2[0], buffer2, SIZE_BUFFER);
 	    	while(sh_reading > 0 && bufptr < sh_reading){
 	    		
+//				fprintf(stderr, "Reading from shell\n");
+
 	    		// Shutdown when receiving ^D from shell
 	    		if(*(buffer2 + bufptr) == 0x04){
+//	    			fprintf(stderr, "Received ^D from shell\n");
 	    			exit(0);
 	    		}
 
@@ -295,10 +304,12 @@ void readWrite2(){
 
 		// Stop read and write if error
 		if(fds[0].revents & (POLLHUP+POLLERR)){
+			fprintf(stderr, "Received error from client\n");
 			exit(1);
 		}
 
 		if(fds[1].revents & (POLLHUP+POLLERR)){
+//			fprintf(stderr, "Recevied error from shell\n");
 			exit(1);	
 		}
 	}
@@ -319,6 +330,7 @@ int main(int argc, char *argv[]){
 		switch(opt){
 			case 'p':
 				portnum = atoi(optarg);
+				signal(SIGTERM, signal_handler);
 				break;
 			case 'e':
 				isEncrypt = 1;
@@ -334,7 +346,6 @@ int main(int argc, char *argv[]){
 	}
 
 	// Create socket connection
-	int sockfd, newsockfd;
 	unsigned int clientlen;
 	struct sockaddr_in serv_addr, client_addr;
 
@@ -416,6 +427,8 @@ int main(int argc, char *argv[]){
 		close(newsockfd);
 	}
 	
+	atexit(restoreTerminal);
+
 	// Read and write for shell communication
 	readWrite2();
 	

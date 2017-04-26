@@ -56,14 +56,15 @@ const int RECEVING = 0;
 const int SENDING = 1;
 
 void signal_handler(int signum){
-	
-	// SIGINT signals to kill child process/shell
-	if(signum == SIGINT){
-		kill(pID, SIGINT);
-	}
 
 	if(signum == SIGPIPE){
 		exit(1);
+	}
+
+	if(signum == SIGTERM){
+		char temp[1];
+		temp[0] = 15;
+		write(sockfd, temp, 1);
 	}
 }
 
@@ -192,12 +193,6 @@ void readWrite2(int sockfd){
 
 				//fprintf(stderr, "%c\n", &buffer[index]);
 
-				// Check for ^C to kill
-				if(*(buffer+index) == 0x03){
-//					kill(pID, SIGINT);
-					exit(1);
-				}
-
 		  		// Check for \r and \n to create a new line
 		  		if(*(buffer+index) == '\r' || *(buffer+index) == '\n'){
 		  			
@@ -260,6 +255,11 @@ void readWrite2(int sockfd){
 	    	int bufptr = 0;
 	    	ssize_t sh_reading = read(sockfd, buffer2, SIZE_BUFFER);
 
+	    	if(sh_reading == 0)
+	    	{
+	    		exit(0);
+	    	}
+
 	    	while(sh_reading > 0 && bufptr < sh_reading){
     		
     			// 1. Log if flagged
@@ -291,12 +291,12 @@ void readWrite2(int sockfd){
 
 		// Stop read and write if error
 		if(fds[0].revents & (POLLHUP+POLLERR)){
-			fprintf(stderr, "POLL Error\n");
+			//fprintf(stderr, "POLL Error\n");
 			exit(1);
 		}
 
 		if(fds[1].revents & (POLLHUP+POLLERR)){
-			fprintf(stderr, "POLL Error\n");
+			//fprintf(stderr, "POLL Error\n");
 			exit(1);	
 		}
 	}
@@ -320,6 +320,7 @@ int main(int argc, char *argv[]){
 				portnum = atoi(optarg);
 				signal(SIGINT, signal_handler);
 				signal(SIGPIPE, signal_handler);
+				signal(SIGTERM, signal_handler);
 				break;
 			case 'l':
 				isLog = 1;
