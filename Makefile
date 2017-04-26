@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -g -lmcrypt
-DIST = README lab1b-client.c lab1b-server.c Makefile
+DIST = README lab1b-client.c lab1b-server.c Makefile my.key
 
 default: lab1b-client lab1b-server
 

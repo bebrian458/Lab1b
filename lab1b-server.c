@@ -59,6 +59,7 @@ void signal_handler(int signum){
 
 	if(signum == SIGTERM)
 		fprintf(stderr, "Caught sigterm\n");
+		exit(1);
 	}
 }
 
@@ -190,7 +191,7 @@ void readWrite2(){
 				// Check for ^C to kill
 				if(*(buffer+index) == 0x03){
 					kill(pID, SIGINT);
-					fprintf(stderr, "Sending kill SIGINT\n");
+//					fprintf(stderr, "Sending kill SIGINT\n");
 //					exit(0);
 				}
 
@@ -304,7 +305,7 @@ void readWrite2(){
 
 		// Stop read and write if error
 		if(fds[0].revents & (POLLHUP+POLLERR)){
-			fprintf(stderr, "Received error from client\n");
+//			fprintf(stderr, "Received error from client\n");
 			exit(1);
 		}
 

@@ -3,10 +3,27 @@ EMAIL: bebrian458@gmail.com
 ID: 204612203
 
 // Slip days
-I am using one of my 5 slip days.
+I am using one of my 4 remaining slip days.
 
 // Brief overview
-This program uses pipes, polling, and signals to implement basic I/O features. This program comes with a --shell flag, which simulates a shell in a child process by using the fork() and exec() system calls. This allows for communication between the shell and the user input from the keyboard.
+	After compiling the src codes lab1b-server.c and
+	lab1b-client.c, there will be 2 executables in this package:
+	lab1b-server and lab1b-client. lab1b-server starts up a server
+	which will fork a child process that executes a shell
+	process. lab1b-client will start up a client that will be able
+	to communicate with the server through a port. The client will
+	receive input from the keyboard, echo it to the terminal, and
+	send it to the server through the use of sockets. The server
+	will then forward it to the shell process via pipes. When the
+	shell outputs the results of the commands sent by the keybaord
+	from the client, the server will receive it and forward it to
+	the client, which will then display on the terminal.
+
+	The client will also have a --log option to log any bytes sent
+	to or received from the server. Both the client and the server
+	will have a --encrypt option to encrypt and decrypt the data
+	being sent to each other, using the algorithm "twofish" in
+	"cfb" mode with the help of the mcrypt.h library.
 
 // Research
 pipes and file descriptors:
